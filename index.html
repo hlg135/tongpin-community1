@@ -2242,7 +2242,71 @@
       let activeDetailId = null;
       let visibleLimit = 4;
 
-      const persist = () => safeStorage.write(STORAGE_KEY, state);
+      const persist = () => {
+        safeStorage.write(STORAGE_KEY, state);
+        pushRemoteData();
+      };
+
+      const REMOTE_DATA_URL = "https://tongpin-community1.onrender.com/api/community";
+      const loadRemoteData = async () => {
+        try {
+          const res = await fetch(REMOTE_DATA_URL, { mode: "cors" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return await res.json();
+        } catch (err) {
+          console.warn("Remote data unavailable, using local fallback.", err);
+          return null;
+        }
+      };
+
+      const pushRemoteData = async () => {
+        try {
+          await fetch(REMOTE_DATA_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              likes: state.likes,
+              bookmarks: state.bookmarks,
+              comments: state.comments,
+              createdPosts: state.createdPosts,
+              joinedMembers: state.joinedMembers,
+              likedMembers: state.likedMembers,
+              likedBoards: state.likedBoards
+            })
+          });
+        } catch (err) {
+          console.warn("Failed to push remote data.", err);
+        }
+      };
+
+      const mergeRemoteData = (remote) => {
+        if (!remote) return;
+        if (Array.isArray(remote.createdPosts)) {
+          state.createdPosts = [...new Set([...state.createdPosts, ...remote.createdPosts])];
+        }
+        if (Array.isArray(remote.joinedMembers)) {
+          state.joinedMembers = [...new Set([...state.joinedMembers, ...remote.joinedMembers])];
+        }
+        if (Array.isArray(remote.likedMembers)) {
+          state.likedMembers = [...new Set([...state.likedMembers, ...remote.likedMembers])];
+        }
+        if (Array.isArray(remote.likedBoards)) {
+          state.likedBoards = [...new Set([...state.likedBoards, ...remote.likedBoards])];
+        }
+        if (remote.comments && typeof remote.comments === "object") {
+          state.comments = { ...remote.comments, ...state.comments };
+        }
+        if (remote.likes && typeof remote.likes === "object") {
+          state.likes = { ...remote.likes, ...state.likes };
+        }
+        if (remote.bookmarks && typeof remote.bookmarks === "object") {
+          state.bookmarks = { ...remote.bookmarks, ...state.bookmarks };
+        }
+        if (typeof remote.totalMembers === "number") state.remoteTotalMembers = remote.totalMembers;
+        if (typeof remote.totalPosts === "number") state.remoteTotalPosts = remote.totalPosts;
+        if (typeof remote.todayNew === "number") state.remoteTodayNew = remote.todayNew;
+      };
+
 
       const syncSettingsControls = () => {
         themeOptions.forEach((button) => {
@@ -3045,6 +3109,13 @@
 
       renderBoards();
       renderMembers();
+      loadRemoteData().then((remote) => {
+        mergeRemoteData(remote);
+        renderBoards();
+        renderMembers();
+        updateCommunityStats();
+        updateFeed(true);
+      }).catch(() => {});
       setTheme(state.theme);
       applyPreferences();
       notifyBtn.classList.toggle("dot", !state.notificationsRead);
